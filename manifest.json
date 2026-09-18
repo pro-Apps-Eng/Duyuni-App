@@ -1,0 +1,8 @@
+{
+  "name": "تطبيق ديوني",
+  "short_name": "ديوني",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000"
+}
