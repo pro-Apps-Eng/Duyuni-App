@@ -2,15 +2,10 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>تطبيق ديوني</title>
-
-  <!-- إعدادات تشغيل التطبيق كـ PWA بملء الشاشة على أبل -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="ديوني">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>حساب الديون الشخصية</title>
+    <!-- إضافة مكتبة html2pdf.js عبر الـ CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         :root {
             --bg-color: #121212;
@@ -167,7 +162,7 @@
         .theme-orange { background: #ef6c00; color: white; }
 
         .modal { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.65); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 14px; }
-        .modal-content { background: var(--card-bg); padding: 18px; border-radius: 12px; width: 100%; max-width: 420px; max-height: 85vh; overflow-y: auto; border: 1px solid var(--border-color); }
+        .modal-content { background: var(--card-bg); padding: 18px; border-radius: 12px; width: 100%; max-width: 440px; max-height: 85vh; overflow-y: auto; border: 1px solid var(--border-color); }
         .checklist-container { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
         .audit-summary-box { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
         
@@ -179,14 +174,59 @@
         /* تنسيقات واجهة التفعيل */
         .activation-box { text-align: center; background: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); margin-top: 20px; }
         .device-id-code { background: rgba(255,255,255,0.08); padding: 12px; border-radius: 8px; font-family: monospace; font-size: 1.1rem; font-weight: bold; letter-spacing: 1px; color: #ffca28; margin: 10px 0; word-break: break-all; }
+
+        /* جدول المبيعات */
+        .sales-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.82rem; }
+        .sales-table th, .sales-table td { border: 1px solid var(--border-color); padding: 6px 4px; text-align: center; }
+        .sales-table th { background: rgba(255,255,255,0.05); }
+        .sales-table input { width: 100%; padding: 6px 4px; font-size: 0.82rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color); text-align: center; }
+        .btn-del-row { background: var(--danger); color: white; border: none; padding: 3px 6px; border-radius: 4px; cursor: pointer; }
+
+        /* تنسيقات منطقة الفاتورة الحرارية المخصصة لتوليد الـ PDF */
+        #thermal-print-area { display: none; }
     </style>
-<link rel="manifest" href="manifest.json">
 </head>
 <body data-theme="dark">
 
     <!-- شاشة الاستقبال (Splash Screen) -->
     <div id="splash-screen">
         <img src="pic.jpg" alt="Splash Image" onerror="hideSplashScreenImmediately()">
+    </div>
+
+    <!-- حاوية الطباعة الحرارية وتوليد الـ PDF -->
+    <div id="thermal-print-area"></div>
+
+    <!-- نافذة خيارات الطباعة (Modal) -->
+    <div id="modal-print-options" class="modal hidden">
+        <div class="modal-content">
+            <h4 style="margin-bottom:10px;">خيارات الطباعة</h4>
+            <div class="form-group">
+                <label>أنواع الحركات المطلوبة:</label>
+                <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px; font-size: 0.9rem;">
+                    <label><input type="checkbox" class="print-type-cb" value="debt_for_me" checked> دين لي</label>
+                    <label><input type="checkbox" class="print-type-cb" value="debt_on_me" checked> دين علي</label>
+                    <label><input type="checkbox" class="print-type-cb" value="receipt" checked> سند قبض</label>
+                    <label><input type="checkbox" class="print-type-cb" value="payment" checked> سند صرف</label>
+                    <label><input type="checkbox" class="print-type-cb" value="cheque" checked> شيك</label>
+                    <label><input type="checkbox" class="print-type-cb" value="sales" checked> مبيعات</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="print-all-time" checked onchange="togglePrintDateInputs()"> بلا تاريخ (من بداية الحساب حتى النهاية)</label>
+            </div>
+            <div id="print-date-range-group" class="hidden">
+                <div class="form-group">
+                    <label>من تاريخ:</label>
+                    <input type="date" id="print-start-date">
+                </div>
+                <div class="form-group">
+                    <label>إلى تاريخ:</label>
+                    <input type="date" id="print-end-date">
+                </div>
+            </div>
+            <button class="btn btn-success btn-block" onclick="executeFilteredPrint()">🖨️ طباعة وتوليد PDF</button>
+            <button class="btn btn-secondary btn-block" onclick="closeModal('modal-print-options')">إلغاء</button>
+        </div>
     </div>
 
     <!-- واجهة تفعيل التطبيق -->
@@ -301,9 +341,11 @@
             <button class="btn btn-warning" onclick="openTransactionModal('payment')">📤 سند صرف</button>
         </div>
 
-        <div style="display: flex; gap: 8px; margin-bottom: 10px;">
-            <button class="btn btn-info" style="flex: 1;" onclick="openTransactionModal('cheque')">📜 إضافة شيك</button>
-            <button class="btn btn-secondary" style="flex: 1;" onclick="openEditPersonView()">✏️ التعديل</button>
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
+            <button class="btn btn-info" style="width: 100%;" onclick="openTransactionModal('cheque')">📜 إضافة شيك</button>
+            <button class="btn btn-primary" style="width: 100%; background-color: #2196f3;" onclick="openSalesModal()">🛒 مبيعات</button>
+            <button class="btn btn-secondary" style="width: 100%;" onclick="openEditPersonView()">✏️ التعديل</button>
+            <button class="btn btn-warning" style="width: 100%; background-color: #ff9800;" onclick="printThermalReceipt()">🖨️ طباعة</button>
         </div>
 
         <button class="btn btn-danger btn-block" onclick="deleteCurrentPerson()">🗑️ حذف نهائي للشخص</button>
@@ -332,7 +374,7 @@
         <div id="tx-details-content" class="info-card"></div>
 
         <div id="tx-details-actions" style="display: flex; flex-direction: column; gap: 10px;">
-            <button class="btn btn-success btn-block" onclick="shareCurrentTxMessage()">📲 مشاركة</button>
+            <button id="btn-share-tx" class="btn btn-success btn-block" onclick="shareCurrentTxMessage()">📲 مشاركة</button>
             <button class="btn btn-primary btn-block" onclick="triggerEditCurrentTx()">✏️ تعديل الحركة</button>
             <button id="btn-reject-cheque" class="btn btn-warning btn-block hidden" onclick="triggerRejectCheque()">🚫 تم الرفض (إلغاء الأثر المالي)</button>
             <button class="btn btn-danger btn-block" onclick="triggerDeleteCurrentTx()">🗑️ حذف الحركة</button>
@@ -350,8 +392,8 @@
             <div id="cheque-type-group" class="form-group hidden">
                 <label>نوع الشيك:</label>
                 <select id="tx-cheque-type">
-                    <option value="positive">شيك لي (قبض) (+)</option>
-                    <option value="negative">شيك مني (صرف) (-)</option>
+                    <option value="negative">شيك لي (قبض) (-)</option>
+                    <option value="positive">شيك مني (صرف) (+)</option>
                 </select>
             </div>
 
@@ -373,14 +415,13 @@
                 <div class="form-group">
                     <label>صورة الشيك:</label>
                     <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                        <button type="button" class="btn btn-info" style="flex:1;" onclick="triggerFileInput('gallery')">🖼️ المعرض</button>
-                        <button type="button" class="btn btn-primary" style="flex:1;" onclick="triggerFileInput('camera')">📷 الكاميرا</button>
+                        <button type="button" id="btn-gallery" class="btn btn-info" style="flex:1;" onclick="openCapacitorGallery()">🖼️ المعرض</button>
+                        <button type="button" id="btn-camera" class="btn btn-primary" style="flex:1;" onclick="openCapacitorCamera()">📷 الكاميرا</button>
                     </div>
-                    <!-- مدخلات ملفات مخفية ومتوافقة مع نظام أندرويد الهاتفي -->
-                    <input type="file" id="input-file-gallery" accept="image/*" class="hidden" onchange="handleFileSelect(event)">
-                    <input type="file" id="input-file-camera" accept="image/*" capture="environment" class="hidden" onchange="handleFileSelect(event)">
                     
-                    <div id="image-preview-container" class="img-preview"></div>
+                    <div id="image-preview-container" class="img-preview">
+                        <img id="previewImage" src="" style="max-width: 100%; display: none; margin-top: 10px;" />
+                    </div>
                 </div>
             </div>
 
@@ -390,6 +431,64 @@
             </div>
 
             <button type="submit" class="btn btn-success btn-block">💾 حفظ الحركة</button>
+            <button type="button" class="button btn btn-secondary btn-block" onclick="showView('view-person-details')">إلغاء</button>
+        </form>
+    </div>
+
+    <!-- واجهة المبيعات الجديدة -->
+    <div id="view-sales-form" class="view">
+        <div class="header"><h3>فاتورة مبيعات جديدة</h3></div>
+        <form id="form-sales" onsubmit="saveSalesTransaction(event)">
+            <div class="form-group">
+                <label>التاريخ:</label>
+                <input type="date" id="sales-date" required>
+            </div>
+
+            <div class="form-group" style="overflow-x: auto;">
+                <label>الأصناف:</label>
+                <table class="sales-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 10%;">#</th>
+                            <th style="width: 35%;">اسم الصنف</th>
+                            <th style="width: 20%;">السعر</th>
+                            <th style="width: 15%;">الكمية</th>
+                            <th style="width: 20%;">الإجمالي</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="sales-items-body">
+                    </tbody>
+                </table>
+                <button type="button" class="btn btn-sm btn-info" style="margin-top: 8px;" onclick="addSalesRow()">➕ إضافة صنف</button>
+            </div>
+
+            <div class="form-group">
+                <label>قيمة الفاتورة (مجموع الأصناف):</label>
+                <input type="number" id="sales-subtotal" readonly value="0.00" style="background-color: rgba(255,255,255,0.05);">
+            </div>
+
+            <div class="form-group">
+                <label>الخصم:</label>
+                <input type="number" id="sales-discount" step="0.01" value="0.00" oninput="calculateSalesTotals()" placeholder="0.00">
+            </div>
+
+            <div class="form-group">
+                <label>إجمالي المبلغ (بعد الخصم):</label>
+                <input type="number" id="sales-total" readonly value="0.00" style="background-color: rgba(255,255,255,0.05);">
+            </div>
+
+            <div class="form-group">
+                <label>المبلغ المدفوع نقداً:</label>
+                <input type="number" id="sales-paid" step="0.01" value="0.00" oninput="calculateSalesTotals()" placeholder="0.00">
+            </div>
+
+            <div class="form-group">
+                <label>الدين المتبقي (دين لي):</label>
+                <input type="number" id="sales-remaining" readonly value="0.00" style="background-color: rgba(255,255,255,0.05); font-weight: bold; color: #4caf50;">
+            </div>
+
+            <button type="submit" class="btn btn-success btn-block">💾 حفظ الفاتورة والدين</button>
             <button type="button" class="btn btn-secondary btn-block" onclick="showView('view-person-details')">إلغاء</button>
         </form>
     </div>
@@ -447,6 +546,7 @@
     </div>
 
     <!-- JavaScript البرمجي الشامل -->
+  
  <script src="app-obfuscated.js"></script>
 </body>
 </html>
